@@ -10,6 +10,7 @@ class CustomController(FlightController):
         pass    
     def get_thrusts(self, drone: Drone) -> Tuple[float, float]:
         return (0.5, 0.5) # Replace this with your custom algorithm
+        #test
     def load(self):
         pass
     def save(self):
