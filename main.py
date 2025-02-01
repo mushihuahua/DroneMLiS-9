@@ -11,13 +11,13 @@ from heuristic_controller import HeuristicController
 from custom_controller import CustomController
 
 def generate_controller() -> FlightController:
-    return HeuristicController() # <--- Replace this with your own written controller
+    return CustomController() # <--- Replace this with your own written controller
     # return CustomController()
 
 def is_training() -> bool:
-    return False # <--- Replace this with True if you want to train, false otherwise
+    return True # <--- Replace this with True if you want to train, false otherwise
 def is_saving() -> bool:
-    return False # <--- Replace this with True if you want to save the results of training, false otherwise
+    return True # <--- Replace this with True if you want to save the results of training, false otherwise
 
 #---------------------------------------------------------------------#
 SCREEN_WIDTH = 720
