@@ -6,18 +6,18 @@ import numpy as np
 import random
 
 ACTIONS = [
-    (0.0, 0.0),
-    (-0.05, +0.05), 
-    (+0.05, -0.05),
-    (+0.005, +0.005),
-    (-0.005, -0.005)
+    # (0.0, 0.0),
+    (0, +0.2), 
+    (0, -0.2),
+    (+0.3, 0),
+    (-0.3, 0)
 ]
 
 
 class CustomController(FlightController):
 
     def get_max_simulation_steps(self):
-        return 1000
+        return 10000
     
     def __discretize_state(self, dx, dy, pitch):
         dx_bin = int(np.clip((dx + 1) * 50, 0, 99))  
@@ -42,7 +42,7 @@ class CustomController(FlightController):
 
     def train(self):
 
-        for episode in range(1000):
+        for episode in range(100):
             drone = self.init_drone()
             target = drone.get_next_target()
 
@@ -67,8 +67,8 @@ class CustomController(FlightController):
                 else:
                     action = np.argmax(self.Qtable[state])  # Exploit
                 
-                left = np.clip(drone.thrust_left + ACTIONS[action][0], 0, 1)
-                right = np.clip(drone.thrust_right + ACTIONS[action][1], 0, 1)
+                left = np.clip(0.5 + ACTIONS[action][0] + ACTIONS[action][1] - drone.pitch , 0, 1)
+                right = np.clip(0.5 + ACTIONS[action][0] + -(ACTIONS[action][1] - drone.pitch), 0, 1)
 
                 drone.set_thrust((left, right))
                 drone.step_simulation(self.get_time_interval())
@@ -76,20 +76,20 @@ class CustomController(FlightController):
                 target = drone.get_next_target()
                 distance_to_target = np.sqrt(dy**2 + dx**2)
                 
-                reward = -distance_to_target * 10
+                reward = -distance_to_target * 100
 
                 # if abs(drone.pitch) > 0.3:  
                 #     reward -= 50 * abs(drone.pitch)
 
                 # reward -= 10 * (drone.pitch ** 2)
 
-                reward -=  10 * abs(left - right)
+                # reward -=  10 * abs(left - right)
 
                 if abs(drone.x) > 0.5 or abs(drone.y) > 0.75:
                     reward -= 1000  
                     crashed = True
-                else:
-                    reward += time_alive / 10 
+                # else:
+                #     reward += time_alive / 10 
 
                 if drone.has_reached_target_last_update:
                     reward += 1000 
@@ -123,14 +123,17 @@ class CustomController(FlightController):
         else:
             action = np.argmax(self.Qtable[state])  # Exploit
 
-        left = np.clip(drone.thrust_left + ACTIONS[action][0], 0, 1)
-        right = np.clip(drone.thrust_right + ACTIONS[action][1], 0, 1)
+        left = np.clip(0.5 + ACTIONS[action][0] + ACTIONS[action][1] - drone.pitch , 0, 1)
+        right = np.clip(0.5 + ACTIONS[action][0] + -(ACTIONS[action][1] - drone.pitch), 0, 1)
 
         dx = drone.get_next_target()[0] - drone.x
         dy = drone.get_next_target()[1] - drone.y
 
         print(dy)
         print(drone.velocity_y)
+
+        if abs(drone.pitch) > 0.5:
+            return (0.5, 0.5)
 
 
         return (left, right) 
