@@ -110,7 +110,7 @@ class CustomController(FlightController):
 
 
         return (left, right) 
-    
+
     def load(self):
         pass
     def save(self):
