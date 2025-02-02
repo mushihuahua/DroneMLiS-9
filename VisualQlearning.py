@@ -18,8 +18,10 @@ class CustomControllerVisual(FlightController):
         self.drone = None
 
     def discretize_state(self, x, y, vx, vy, theta):
-        """Simplified discretization for the state space."""
-        return int((x % 10) + (y % 10) * 10)
+        # Normalize x and y to a fixed range (e.g., -1 to 1 -> 0 to 9)
+        x_bin = int(np.clip((x + 1) * 5, 0, 9))  # Scale x from -1 to 1 into 0–9
+        y_bin = int(np.clip((y + 1) * 5, 0, 9))  # Scale y from -1 to 1 into 0–9
+        return x_bin + y_bin * 10
 
     def choose_action(self, state):
         """Choose an action using epsilon-greedy policy."""
@@ -36,13 +38,13 @@ class CustomControllerVisual(FlightController):
         right = drone.thrust_right
 
         if action == 0:
-            left = min(left, 1.0)  # Ensure thrust does not exceed 1.0
+            left = min(left + 0.1, 1.0)  # Ensure thrust does not exceed 1.0
         elif action == 1:
-            left = max(left, 0.0)  # Ensure thrust does not go below 0.0
+            left = max(left - 0.1, 0.0)  # Ensure thrust does not go below 0.0
         elif action == 2:
-            right = min(right, 1.0)  # Ensure thrust does not exceed 1.0
+            right = min(right + 0.1, 1.0)  # Ensure thrust does not exceed 1.0
         elif action == 3:
-            right = max(right, 0.0)  # Ensure thrust does not go below 0.0
+            right = max(right - 0.1, 0.0)  # Ensure thrust does not go below 0.0
 
         return left, right
 
@@ -59,7 +61,7 @@ class CustomControllerVisual(FlightController):
         # Create the screen
         screen = pygame.display.set_mode((720, 480))
 
-        episodes = 100
+        episodes = 1000
         delta_time = self.get_time_interval()
 
         for episode in range(episodes):
@@ -86,7 +88,7 @@ class CustomControllerVisual(FlightController):
                 reward = -np.sqrt((self.drone.x - self.drone.get_next_target()[0]) ** 2 +
                                   (self.drone.y - self.drone.get_next_target()[1]) ** 2)
                 if self.drone.has_reached_target_last_update:
-                    reward += 100
+                    reward += 10000
 
                 # Update Q-table
                 self.q_table[state, action] += self.alpha * (
