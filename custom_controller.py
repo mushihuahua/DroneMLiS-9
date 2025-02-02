@@ -7,8 +7,8 @@ import random
 
 ACTIONS = [
     # (0.0, 0.0),
-    (0, +0.2), 
-    (0, -0.2),
+    (0, +0.3), 
+    (0, -0.3),
     (+0.3, 0),
     (-0.3, 0)
 ]
@@ -17,41 +17,43 @@ ACTIONS = [
 class CustomController(FlightController):
 
     def get_max_simulation_steps(self):
-        return 10000
+        return 3000
     
     def __discretize_state(self, dx, dy, pitch):
-        dx_bin = int(np.clip((dx + 1) * 50, 0, 99))  
-        dy_bin = int(np.clip((dy + 1) * 50, 0, 99))  
-        pitch_bin = int(np.clip((pitch + 1) * 20, 0, 39))  
+        dx_bin = int(np.clip((dx + 1) * 10, 0, 19))  # 20 bins for dx
+        dy_bin = int(np.clip((dy + 1) * 10, 0, 19))  # 20 bins for dy
+        pitch_bin = int(np.clip((pitch + 1) * 10, 0, 19))  # 20 bins for pitch
 
-        return dx_bin + dy_bin * 100 + pitch_bin * 10000  
-
+        return dx_bin + dy_bin * 20 + pitch_bin * 400    
 
     def __init__(self):
         
-        self.state_space = 100*100*40
+        self.state_space = 20*20*20
         self.action_space = len(ACTIONS)
 
         self.Qtable = np.random.uniform(low=-0.1, high=0.1, size=(self.state_space, self.action_space))  
         self.Qtable_path = 'q_table.csv'  
         self.alpha = 0.1                                       # Learning rate
         self.gamma = 0.9                                        # Discount factor
-        self.epsilon = 0.8                             # Exploration rate
+        self.epsilon = 0.8                            # Exploration rate
 
         self.reward = 0
 
     def train(self):
 
-        for episode in range(100):
+        for episode in range(2000):
             drone = self.init_drone()
+            # drone.x, drone.y = random.uniform(-0.75, 0.75), random.uniform(-0.5, 0.5)
             target = drone.get_next_target()
 
-            state = self.__discretize_state(target[0] - drone.x, target[1] - drone.y, drone.pitch)
+            dx = target[0] - drone.x
+            dy = target[1] - drone.y
+
+            state = self.__discretize_state(dx, dy, drone.pitch)
 
 
             action = 0
             time_alive = 0
-
 
             for _ in range(self.get_max_simulation_steps()):
 
@@ -76,30 +78,36 @@ class CustomController(FlightController):
                 target = drone.get_next_target()
                 distance_to_target = np.sqrt(dy**2 + dx**2)
                 
-                reward = -distance_to_target * 100
+                reward = - distance_to_target 
 
-                # if abs(drone.pitch) > 0.3:  
-                #     reward -= 50 * abs(drone.pitch)
+                if abs(drone.pitch) > 0.5:  
+                    reward -= 50 * abs(drone.pitch)
 
                 # reward -= 10 * (drone.pitch ** 2)
 
                 # reward -=  10 * abs(left - right)
 
                 if abs(drone.x) > 0.5 or abs(drone.y) > 0.75:
-                    reward -= 1000  
+                    reward -= 100  
                     crashed = True
                 # else:
                 #     reward += time_alive / 10 
 
+                if distance_to_target < 0.15:
+                    reward += 100  # Encourage a confident final approach
+                
+                # reward += (drone.velocity_x * dx)
+                # reward += (drone.velocity_y * dy)
+
                 if drone.has_reached_target_last_update:
-                    reward += 1000 
+                    reward += 200
 
                 next_state = self.__discretize_state(dx, dy, drone.pitch)
                 self.Qtable[state, action] += self.alpha * (
                         reward + self.gamma * np.max(self.Qtable[next_state]) - self.Qtable[state, action]
                     )
                 
-                self.epsilon = max(0.1, self.epsilon * 0.995)
+                self.epsilon = max(0.01, self.epsilon * 0.995)
                 
                 state = next_state
 
@@ -118,7 +126,7 @@ class CustomController(FlightController):
         state = self.__discretize_state(target[0] - drone.x, target[1] - drone.y, drone.pitch)
         print(f"state: {state}, qtable: {self.Qtable[state]}")
         print(f"x: {drone.x}, y: {drone.y}, pitch {drone.pitch}")
-        if random.uniform(0, 1) < self.epsilon:
+        if random.uniform(0, 1) < 0.01:
             action = random.randint(0, self.action_space - 1)  # Explore
         else:
             action = np.argmax(self.Qtable[state])  # Exploit
@@ -129,12 +137,7 @@ class CustomController(FlightController):
         dx = drone.get_next_target()[0] - drone.x
         dy = drone.get_next_target()[1] - drone.y
 
-        print(dy)
-        print(drone.velocity_y)
-
-        if abs(drone.pitch) > 0.5:
-            return (0.5, 0.5)
-
+        print(np.sqrt(dx**2 + dy**2))
 
         return (left, right) 
         
@@ -145,8 +148,14 @@ class CustomController(FlightController):
             Drone: An initial drone object with some programmed target coordinates.
         """
         drone = Drone()
-        drone.add_target_coordinate((0.35, 0.3))
+        drone.add_target_coordinate((0.15, 0.1))
+        drone.add_target_coordinate((0.4, 0.3))
+        drone.add_target_coordinate((0, 0))
+
+
         drone.add_target_coordinate((-0.35, 0.4))
+        drone.add_target_coordinate((0, 0))
+
         drone.add_target_coordinate((0.5, -0.4))
         drone.add_target_coordinate((-0.35, 0))
 
