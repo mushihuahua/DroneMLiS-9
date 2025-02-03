@@ -4,13 +4,13 @@ from typing import Tuple
 
 import numpy as np
 import random
+import csv
 
 ACTIONS = [
-    # (0.0, 0.0),
-    (0, +0.3), 
-    (0, -0.3),
-    (+0.3, 0),
-    (-0.3, 0)
+    (0, +0.2), # Pitch right
+    (0, -0.2), # Pitch left
+    (+0.3, 0), # Thrust up
+    (-0.3, 0)  # Thrust down
 ]
 
 
@@ -25,6 +25,17 @@ class CustomController(FlightController):
         pitch_bin = int(np.clip((pitch + 1) * 10, 0, 19))  # 20 bins for pitch
 
         return dx_bin + dy_bin * 20 + pitch_bin * 400    
+    
+
+    def __select_action(self, state: int, epsilon: float) -> int:
+        action = 0
+        if random.uniform(0, 1) < epsilon:
+            action = random.randint(0, self.action_space - 1)  # Explore
+        else:
+            action = np.argmax(self.Qtable[state])  # Exploit
+        
+        return action
+
 
     def __init__(self):
         
@@ -35,7 +46,9 @@ class CustomController(FlightController):
         self.Qtable_path = 'q_table.csv'  
         self.alpha = 0.1                                       # Learning rate
         self.gamma = 0.9                                        # Discount factor
-        self.epsilon = 0.8                            # Exploration rate
+        self.epsilon = 0.9                           # Exploration rate
+        self.epsilon_decay_rate = 0.995                           # epsilon decay rate
+        self.minimum_epsilon = 0.01                           # minimum epsilon
 
         self.reward = 0
 
@@ -43,31 +56,25 @@ class CustomController(FlightController):
 
         for episode in range(2000):
             drone = self.init_drone()
-            # drone.x, drone.y = random.uniform(-0.75, 0.75), random.uniform(-0.5, 0.5)
             target = drone.get_next_target()
 
             dx = target[0] - drone.x
             dy = target[1] - drone.y
 
             state = self.__discretize_state(dx, dy, drone.pitch)
-
-
             action = 0
-            time_alive = 0
 
-            for _ in range(self.get_max_simulation_steps()):
+            total_reward = 0
+            steps = 0
 
-                time_alive += 1
+            for step in range(self.get_max_simulation_steps()):
 
                 crashed = False
 
                 dx = target[0] - drone.x
                 dy = target[1] - drone.y
 
-                if random.uniform(0, 1) < self.epsilon:
-                    action = random.randint(0, self.action_space - 1)  # Explore
-                else:
-                    action = np.argmax(self.Qtable[state])  # Exploit
+                action = self.__select_action(state, self.epsilon)
                 
                 left = np.clip(0.5 + ACTIONS[action][0] + ACTIONS[action][1] - drone.pitch , 0, 1)
                 right = np.clip(0.5 + ACTIONS[action][0] + -(ACTIONS[action][1] - drone.pitch), 0, 1)
@@ -77,48 +84,45 @@ class CustomController(FlightController):
 
                 target = drone.get_next_target()
                 distance_to_target = np.sqrt(dy**2 + dx**2)
-                
-                reward = - distance_to_target 
 
-                if abs(drone.pitch) > 0.5:  
+                # REWARDS
+                
+                reward = - distance_to_target * 10
+
+                # penalise it for too much pitch to keep it stabilised
+                if abs(drone.pitch) > 0.4:  
                     reward -= 50 * abs(drone.pitch)
 
-                # reward -= 10 * (drone.pitch ** 2)
-
-                # reward -=  10 * abs(left - right)
-
-                if abs(drone.x) > 0.5 or abs(drone.y) > 0.75:
-                    reward -= 100  
+                # heavy penalty for crashing
+                if abs(drone.x) >= 0.5 or abs(drone.y) >= 0.75:
+                    reward -= 1000  
                     crashed = True
-                # else:
-                #     reward += time_alive / 10 
 
-                if distance_to_target < 0.15:
-                    reward += 100  # Encourage a confident final approach
-                
-                # reward += (drone.velocity_x * dx)
-                # reward += (drone.velocity_y * dy)
+                # some more reward when its close to the target
+                if distance_to_target < 0.2:
+                    reward += 20  
 
+                # reward when it hits the target
                 if drone.has_reached_target_last_update:
-                    reward += 200
+                    reward += 200 
 
+                # update parameters according to algorithm
                 next_state = self.__discretize_state(dx, dy, drone.pitch)
                 self.Qtable[state, action] += self.alpha * (
                         reward + self.gamma * np.max(self.Qtable[next_state]) - self.Qtable[state, action]
                     )
                 
-                self.epsilon = max(0.01, self.epsilon * 0.995)
+                self.epsilon = max(self.minimum_epsilon, self.epsilon * self.epsilon_decay_rate)
                 
                 state = next_state
+                steps += 1
+                total_reward += reward
 
                 if(crashed):
                     break
+
+            print(f"Episode {episode + 1} finished after {steps} steps. Reward: {total_reward}")
                 
-
-
-                # print(f"position {drone.x}, {drone.y}")
-                # print(distance_to_target)
-
 
     def get_thrusts(self, drone: Drone) -> Tuple[float, float]:
 
@@ -126,10 +130,7 @@ class CustomController(FlightController):
         state = self.__discretize_state(target[0] - drone.x, target[1] - drone.y, drone.pitch)
         print(f"state: {state}, qtable: {self.Qtable[state]}")
         print(f"x: {drone.x}, y: {drone.y}, pitch {drone.pitch}")
-        if random.uniform(0, 1) < 0.01:
-            action = random.randint(0, self.action_space - 1)  # Explore
-        else:
-            action = np.argmax(self.Qtable[state])  # Exploit
+        action = self.__select_action(state, epsilon=0.005)
 
         left = np.clip(0.5 + ACTIONS[action][0] + ACTIONS[action][1] - drone.pitch , 0, 1)
         right = np.clip(0.5 + ACTIONS[action][0] + -(ACTIONS[action][1] - drone.pitch), 0, 1)
@@ -141,6 +142,25 @@ class CustomController(FlightController):
 
         return (left, right) 
         
+    def init_train_drone(self) -> Drone:
+        """Creates a Drone object initialised with a random set of target coordinates for training.
+
+        Returns:
+            Drone: An initial drone object with some programmed target coordinates.
+        """
+        drone = Drone()
+        random.seed(42)
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        drone.add_target_coordinate((random.uniform(-0.5, 0.5), random.uniform(-0.3, 0.3)))
+        random.seed()
+        return drone
+
     def init_drone(self) -> Drone:
         """Creates a Drone object initialised with a deterministic set of target coordinates.
 
@@ -158,15 +178,37 @@ class CustomController(FlightController):
 
         drone.add_target_coordinate((0.5, -0.4))
         drone.add_target_coordinate((-0.35, 0))
-
-        drone.add_target_coordinate((0, 0.2))
-        drone.add_target_coordinate((0, 0.4))
-        drone.add_target_coordinate((0, -0.4))
-        drone.add_target_coordinate((0, 0))
-        drone.add_target_coordinate((0, -0.3))
         return drone
     
-    def load(self):
-        pass
     def save(self):
-        pass
+        """Save the Q-table to a CSV file."""
+        with open(self.Qtable_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(self.Qtable)
+        print(f"Q-table saved to {self.Qtable_path}")
+
+        parameter_array = np.array([self.gamma, self.alpha, self.epsilon, self.epsilon_decay_rate, self.minimum_epsilon])
+        np.save('custom_controller_parameters.npy', parameter_array)
+
+        print(f"Parameters saved to custom_controller_parameters.npy")
+
+    def load(self):
+        """Load the Q-table and Parameters from files on disk."""
+
+        try:
+            parameter_array = np.load('custom_controller_parameters.npy')
+            self.gamma = parameter_array[0]
+            self.alpha = parameter_array[1]
+            self.epsilon = parameter_array[2]
+            self.epsilon_decay_rate = parameter_array[3]
+            self.minimum_epsilon = parameter_array[3]
+        except:
+            print("Could not load parameters, sticking with default parameters.")
+
+        try:
+            with open(self.Qtable_path, mode='r') as file:
+                reader = csv.reader(file)
+                self.Qtable = np.array([[float(value) for value in row] for row in reader])
+            print(f"Q-table loaded from {self.Qtable_path}")
+        except FileNotFoundError:
+            print(f"No saved Q-table found at {self.Qtable_path}.")

@@ -12,7 +12,7 @@ from custom_controller import CustomController
 from CustomControllerv2 import CustomControllerv2
 
 def generate_controller() -> FlightController:
-    return CustomControllerv2() # <--- Replace this with your own written controller
+    return CustomController() # <--- Replace this with your own written controller
     # return CustomController()
 
 def is_training() -> bool:
@@ -92,7 +92,7 @@ def main(controller: FlightController):
 
         # Checks whether to reset the current drone
         simulation_step_counter+=1
-        if (simulation_step_counter>max_simulation_steps):
+        if (simulation_step_counter>max_simulation_steps or abs(drone.y) > 0.5 or abs(drone.x) > 0.75):
             drone = controller.init_drone() # Reset the drone
             simulation_step_counter = 0
 
