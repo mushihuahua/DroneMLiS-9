@@ -93,9 +93,9 @@ class CustomController(FlightController):
                     
                     reward = - distance_to_target * 10
 
-                    # # penalise it for too much pitch to keep it stabilised
-                    # if abs(drone.pitch) > 0.4:  
-                    #     reward -= 50 * abs(drone.pitch)
+                    # penalise it for too much pitch to keep it stabilised
+                    if abs(drone.pitch) > 0.4:  
+                        reward -= 5 * abs(drone.pitch)
 
                     # heavy penalty for crashing
                     if abs(drone.x) >= 0.5 or abs(drone.y) >= 0.75:
