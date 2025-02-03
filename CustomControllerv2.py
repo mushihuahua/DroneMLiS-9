@@ -38,7 +38,7 @@ class SimpleQNetwork:
     def backward(self, dloss, cache, lr: float):
         """
         Backward pass to update network parameters using gradients from the loss.
-        dloss: Gradient of the loss with respect to network output (shape: [batch_size, output_dim]).
+        dloss: Gradient of the loss with respect to network output (shape: [, output_dim]).
         cache: Cached values from the forward pass.
         lr: Learning rate.
         x is the network's input.
@@ -75,27 +75,6 @@ class SimpleQNetwork:
         self.W2 = np.copy(other_network.W2)
         self.b2 = np.copy(other_network.b2)
 
-# === Replay Buffer ===
-
-class ReplayBuffer:
-    def __init__(self, capacity: int):
-        self.buffer = deque(maxlen=capacity)
-    
-    def push(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
-    
-    def sample(self, batch_size: int):
-        batch = random.sample(self.buffer, batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
-        return (np.array(states), 
-                np.array(actions, dtype=np.int32), 
-                np.array(rewards, dtype=np.float32), 
-                np.array(next_states), 
-                np.array(dones, dtype=np.float32))
-    
-    def __len__(self):
-        return len(self.buffer)
-
 # === DQN Agent Using the Simple Perceptron ===
 
 class DQNAgent:
@@ -106,12 +85,10 @@ class DQNAgent:
         hidden_dim: int = 32,
         lr: float = 0.01,
         gamma: float = 0.99,
-        epsilon: float = 0.8,
+        epsilon: float = 1,
         epsilon_min: float = 0.1,
         epsilon_decay: float = 0.999,
-        buffer_capacity: int = 10000,
-        batch_size: int = 32,
-        target_update_freq: int = 500
+        target_update_freq: int = 50
     ):
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -122,7 +99,6 @@ class DQNAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
 
-        self.batch_size = batch_size
         self.target_update_freq = target_update_freq
         self.total_steps = 0
 
@@ -130,8 +106,6 @@ class DQNAgent:
         self.online_net = SimpleQNetwork(state_dim, hidden_dim, action_dim)
         self.target_net = SimpleQNetwork(state_dim, hidden_dim, action_dim)
         self.target_net.copy_parameters_from(self.online_net)
-
-        self.replay_buffer = ReplayBuffer(buffer_capacity)
     
     def select_action(self, state: np.ndarray) -> int:
         """Select an action using the ε-greedy policy."""
@@ -143,38 +117,31 @@ class DQNAgent:
             q_values, _ = self.online_net.forward(state)
             return int(np.argmax(q_values))
     
-    def push_transition(self, state, action, reward, next_state, done):
-        self.replay_buffer.push(state, action, reward, next_state, done)
+
     
-    def train_step(self):
-        if len(self.replay_buffer) < self.batch_size:
-            return
-        
-        # Sample a batch from the replay buffer.
-        states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
+    def train_step(self, state, action, reward, next_state, done):
         
         # Compute Q-values for current states.
-        q_values, cache = self.online_net.forward(states)  # shape: [batch_size, action_dim]
+        state, next_state = state.reshape(1, -1), next_state.reshape(1, -1)
+        q_values, cache = self.online_net.forward(state)
+        q_next, _ = self.target_net.forward(next_state)
+        max_next_q = np.max(q_next, axis=1)
+        target_q = np.copy(q_values)
         
         # Compute Q-values for next states from target network.
-        q_next, _ = self.target_net.forward(next_states)  # shape: [batch_size, action_dim]
-        max_next_q = np.max(q_next, axis=1)  # shape: [batch_size]
+        q_next, _ = self.target_net.forward(next_state)  
+        max_next_q = np.max(q_next, axis=1)  
         
         # Compute the target Q-values.
         # If done, target = reward, else = reward + gamma * max_next_q
         target_q = np.copy(q_values)
-        for i in range(self.batch_size):
-            target = rewards[i]
-            if not dones[i]:
-                target += self.gamma * max_next_q[i]
-            # Only update the Q-value for the action that was actually taken.
-            target_q[i, actions[i]] = target
-        
+        target = reward if done else reward + self.gamma * max_next_q
+        target_q[0, action] = target
         # Compute loss and its gradient.
         # Using Mean Squared Error (MSE) loss.
         loss = np.mean((q_values - target_q) ** 2)
-        # Gradient of MSE loss: 2 * (prediction - target) / batch_size
-        grad_loss = 2 * (q_values - target_q) / self.batch_size
+        # Gradient of MSE loss: 2 * (prediction - target) 
+        grad_loss = 2 * (q_values - target_q) 
         
         # Backpropagate the gradient through the online network.
         self.online_net.backward(grad_loss, cache, self.lr)
@@ -219,12 +186,13 @@ class CustomControllerv2(FlightController):
         pitch = drone.pitch
         return np.array([dx, dy, pitch])
 
-    def train(self, num_episodes: int = 3000):
+    def train(self, num_episodes: int = 100):
         for episode in range(num_episodes):
             drone = self.init_drone()
             target = drone.get_next_target()
             state = self._get_state(drone, target)
-            
+            prev_distance = 0
+            reward = 0
             for step in range(self.max_simulation_steps):
                 # Select action using the agent.
                 action_index = self.agent.select_action(state)
@@ -245,7 +213,7 @@ class CustomControllerv2(FlightController):
                 dx = target[0] - drone.x
                 dy = target[1] - drone.y
                 distance_to_target = np.sqrt(dx**2 + dy**2)
-                reward = -distance_to_target
+               # reward = -distance_to_target
 
                 done = False
                 # If drone goes out of bounds, penalize and mark episode as done.
@@ -253,21 +221,27 @@ class CustomControllerv2(FlightController):
                     reward -= 100
                     done = True
                 # Bonus for reaching the target.
-                if distance_to_target < 0.15:
-                    reward += 100
+                #if distance_to_target < 0.15:
+                #    reward += 10
                 if drone.has_reached_target_last_update:
-                    reward += 200
+                    reward += 2000
+                reward += 0.01 * step  # Small penalty per step
+
+                if distance_to_target < prev_distance:  
+                    reward += 10  # Bonus for moving in the right direction
+                else:
+                    reward -= 5  # Penalty for moving away
+                prev_distance = distance_to_target
                # print(f"reward {reward}")
-                # Store the transition and train.
-                self.agent.push_transition(state, action_index, reward, next_state, done)
-                loss = self.agent.train_step()  # Optionally log the loss.
+
+               # loss = self.agent.train_step()  # Optionally log the loss.
                 
                 state = next_state
                 
                 if done:
                     break
             
-            print(f"Episode {episode + 1} finished after {step + 1} steps. Epsilon: {reward}")
+            print(f"Episode {episode + 1} finished after {step + 1} steps.")
 
     def save(self, filename='model_weights.npy'):
         # Example: if you want to save the Q-table
@@ -282,11 +256,8 @@ class CustomControllerv2(FlightController):
     def get_thrusts(self, drone) -> Tuple[float, float]:
         target = drone.get_next_target()
         state = self._get_state(drone, target)
-        
-        if np.random.rand() < 0.01:
-            action_index = random.randint(0, len(ACTIONS) - 1)
-        else:
-            action_index = self.agent.select_action(state)
+        action_index = self.agent.select_action(state)
+
         thrust_input = ACTIONS[action_index]
         left = np.clip(0.5 + thrust_input[0] + thrust_input[1] - drone.pitch, 0, 1)
         right = np.clip(0.5 + thrust_input[0] - (thrust_input[1] - drone.pitch), 0, 1)
