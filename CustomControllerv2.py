@@ -218,7 +218,7 @@ class CustomControllerv2(FlightController):
                 done = False
                 # If drone goes out of bounds, penalize and mark episode as done.
                 if abs(drone.x) > 0.5 or abs(drone.y) > 0.75:
-                    reward -= 100
+                    reward -= 1000
                     done = True
                 # Bonus for reaching the target.
                 #if distance_to_target < 0.15:
@@ -262,6 +262,18 @@ class CustomControllerv2(FlightController):
         left = np.clip(0.5 + thrust_input[0] + thrust_input[1] - drone.pitch, 0, 1)
         right = np.clip(0.5 + thrust_input[0] - (thrust_input[1] - drone.pitch), 0, 1)
         return (left, right)
+    
+    def init_train_drone(self) -> Drone:
+        """Creates a Drone object initialised with a random set of target coordinates for training.
+
+        Returns:
+            Drone: An initial drone object with some programmed target coordinates.
+        """
+        drone = Drone()
+        random.seed(42)
+        drone.add_target_coordinate((random.uniform(-0.75, 0.75), random.uniform(-0.5, 0.5)))
+        random.seed()
+        return drone
     
     def init_drone(self) -> Drone:
         """Creates a Drone object initialised with a deterministic set of target coordinates.
