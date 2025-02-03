@@ -9,7 +9,7 @@ from flight_controller import FlightController
 #---------------------WRITE YOUR OWN CODE HERE------------------------#
 from heuristic_controller import HeuristicController
 from custom_controller import CustomController
-from CustomControllerv2 import CustomControllerv2
+from DQN_controller import CustomControllerv2
 
 def generate_controller() -> FlightController:
     return CustomController() # <--- Replace this with your own written controller
