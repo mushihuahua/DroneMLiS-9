@@ -9,9 +9,10 @@ from flight_controller import FlightController
 #---------------------WRITE YOUR OWN CODE HERE------------------------#
 from heuristic_controller import HeuristicController
 from custom_controller import CustomController
+from CustomControllerv2 import CustomControllerv2
 
 def generate_controller() -> FlightController:
-    return CustomController() # <--- Replace this with your own written controller
+    return CustomControllerv2() # <--- Replace this with your own written controller
     # return CustomController()
 
 def is_training() -> bool:
@@ -94,8 +95,6 @@ def main(controller: FlightController):
         if (simulation_step_counter>max_simulation_steps):
             drone = controller.init_drone() # Reset the drone
             simulation_step_counter = 0
-
-    
 
 def draw_target(target_point, screen, target_img):
     target_size = convert_to_screen_size(0.1)
